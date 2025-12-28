@@ -1,0 +1,3 @@
+[submodule "references/PokeLua"]
+	path = references/PokeLua
+	url = https://github.com/Real96/PokeLua.git
