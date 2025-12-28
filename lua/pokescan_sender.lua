@@ -53,16 +53,19 @@ local function onFrame()
   if not data then
     -- Send clear message if we previously had a Pokemon
     if lastHadPokemon then
-      -- Throttle clear messages too
+      -- Throttle clear messages, but only clear flag after successful send
       if frameCount - lastSendFrame >= MIN_SEND_INTERVAL then
         server:sendTable({ clear = true })
         lastSendFrame = frameCount
+        lastHadPokemon = false
+        lastPID = 0
       end
-      lastHadPokemon = false
-      lastPID = 0
     end
     return
   end
+
+  -- Detect state transition: entering battle (no Pokemon -> has Pokemon)
+  local enteringBattle = not lastHadPokemon
   lastHadPokemon = true
 
   -- Apply test mode overrides
@@ -76,13 +79,16 @@ local function onFrame()
   -- Check if client just connected - if so, always send current data
   local forceResend = server:didJustConnect()
 
-  -- Skip if same Pokemon and not forcing resend
-  if not forceResend and data.pid and data.pid == lastPID then
+  -- Force send on battle entry or client connect
+  local bypassThrottle = forceResend or enteringBattle
+
+  -- Skip if same Pokemon and not forcing
+  if not bypassThrottle and data.pid and data.pid == lastPID then
     return
   end
 
-  -- Throttle sends to prevent fast-forward flooding
-  if not forceResend and (frameCount - lastSendFrame) < MIN_SEND_INTERVAL then
+  -- Throttle sends to prevent fast-forward flooding (unless bypassing)
+  if not bypassThrottle and (frameCount - lastSendFrame) < MIN_SEND_INTERVAL then
     return
   end
 

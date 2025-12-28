@@ -50,6 +50,10 @@ This builds PokeScan and installs it to `/Applications/PokeScan.app`.
 2. Select the PokeScan scheme
 3. Build and Run (Cmd+R)
 
+### Developer Loop (AI/Automation)
+
+For the zero-touch loop that launches mGBA + Lua + PokeScan, wires logs/ports, and validates the connection, see [AI_DEV_LOOP.md](AI_DEV_LOOP.md).
+
 ## Usage
 
 ### Quick Start (Recommended)
