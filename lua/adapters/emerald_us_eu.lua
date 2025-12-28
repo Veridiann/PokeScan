@@ -2,6 +2,7 @@
 GAME_ID = "emerald_us_eu"
 
 local enemyAddr = 0x2024744
+local wildTypeAddr = 0x20240FD  -- Battle type flag: 0 = not in battle, 1 = wild, 2+ = trainer
 
 local natureNamesList = {
   "Hardy",
@@ -157,6 +158,10 @@ local function getGender(pokemonPID, speciesDexNumber)
 end
 
 function readWildPokemon()
+  -- First check if we're actually in a battle
+  local battleType = emu:read8(wildTypeAddr)
+  if battleType == 0 then return nil end  -- Not in battle, return nil
+
   local pokemonPID = emu:read32(enemyAddr)
   if pokemonPID == 0 then return nil end
   local pokemonIDs = emu:read32(enemyAddr + 0x4)

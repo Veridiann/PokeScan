@@ -46,17 +46,20 @@ PokeScan/
 │
 ├── PokeScan/                 # Swift source code
 │   ├── App/
-│   │   └── PokeScanApp.swift # App entry, window creation
+│   │   └── PokeScanApp.swift # App entry, window creation, settings
 │   ├── UI/
 │   │   ├── ContentView.swift # Main overlay UI
 │   │   ├── OverlayWindow.swift # Transparent floating window
-│   │   └── PokemonSprite.swift # Sprite image loading
+│   │   ├── PokemonSprite.swift # Sprite image loading
+│   │   └── SettingsView.swift # Settings panel UI
 │   ├── Models/
 │   │   └── PokemonData.swift # Data structures, Pokedex
 │   ├── Services/
 │   │   ├── SocketClient.swift # TCP client to Lua server
 │   │   ├── CriteriaEngine.swift # Catch criteria evaluation
-│   │   └── AlertManager.swift # Sound/visual alerts
+│   │   ├── AlertManager.swift # Sound/visual alerts
+│   │   ├── AppSettings.swift # UserDefaults preferences
+│   │   └── LaunchManager.swift # mGBA launcher service
 │   └── Resources/
 │       ├── pokemon_data.json # Species data (names, base stats)
 │       ├── growth_rates.json # EXP curves for level calc
@@ -199,9 +202,36 @@ The Swift app is a macOS overlay that connects to the Lua server.
 
 ## Launcher System
 
-### One-Click Launcher (`launcher/`)
+### Integrated Launcher (Recommended)
 
-The launcher provides a single-click way to start everything.
+PokeScan has a built-in launcher accessible via the Settings panel. This is the recommended approach.
+
+#### First Launch
+1. Run PokeScan.app
+2. Settings window opens automatically (if not configured)
+3. Set mGBA.app path (auto-detected if in /Applications)
+4. Set ROM path using file picker
+5. Configure save state slot (latest/specific/none)
+6. Click "Launch mGBA" button
+
+#### Settings (`~/Library/Preferences` via UserDefaults)
+- `mgbaPath` - Path to mGBA.app
+- `romPath` - Path to Pokemon Emerald ROM
+- `saveSlot` - Save state slot (latest, 0-9, none)
+- `autoLaunch` - Auto-launch mGBA on app start
+- `luaScriptPath` - Custom Lua script path (optional)
+- `useCustomLuaScript` - Use custom script instead of bundled
+
+#### Access Settings
+- Right-click overlay → "Settings..."
+- Keyboard: Cmd+,
+
+#### Launch from Overlay
+- Right-click overlay → "Launch mGBA" / "Relaunch mGBA"
+
+### Standalone Launcher (Alternative)
+
+For users who prefer a separate launcher app.
 
 #### Install Process
 1. Run `./launcher/install.sh`
@@ -216,19 +246,12 @@ MGBA_APP=""         # auto-detects if empty
 POKESCAN_DIR=""     # uses install path if empty
 ```
 
-#### Launch Sequence
-1. Kill existing mGBA/PokeScan instances
-2. Find ROM and latest save state
-3. Launch mGBA with ROM + Lua script + save state
-4. Wait 2 seconds for Lua server
-5. Launch PokeScan overlay
-
-### Apps Installed
+### Apps
 
 | App | Location | Purpose |
 |-----|----------|---------|
-| PokeScan Launcher | /Applications | One-click: mGBA + overlay |
-| PokeScan | /Applications | Overlay only (manual use) |
+| PokeScan | /Applications | Main app with integrated launcher |
+| PokeScan Launcher | /Applications | Standalone launcher (optional) |
 
 ## Communication Protocol
 

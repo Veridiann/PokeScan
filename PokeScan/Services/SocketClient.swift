@@ -43,6 +43,14 @@ final class SocketClient: ObservableObject, @unchecked Sendable {
     private var reconnectTask: Task<Void, Never>?
     private let networkQueue = DispatchQueue(label: "pokescan.network", qos: .userInitiated)
 
+    // Time-based throttling to prevent fast-forward flooding
+    private var lastMessageTime: Date = .distantPast
+    private let minMessageInterval: TimeInterval = 0.5  // Max 2 updates per second
+    private let maxBufferSize = 65536  // 64KB max buffer to prevent memory issues
+
+    // Flag to prevent reconnection when intentionally stopping
+    private var shouldReconnect = true
+
     init(dex: PokemonDex, host: String = "127.0.0.1", port: UInt16 = 9876) {
         self.dex = dex
         self.host = host
@@ -61,15 +69,26 @@ final class SocketClient: ObservableObject, @unchecked Sendable {
 
     func start() {
         log("PokeScan: Starting client, connecting to \(host):\(port)")
+        shouldReconnect = true
         connect()
     }
 
     func stop() {
+        shouldReconnect = false
         reconnectTask?.cancel()
         reconnectTask = nil
         connection?.cancel()
         connection = nil
         connectionState = .disconnected
+    }
+
+    func reconnect() {
+        shouldReconnect = true
+        reconnectTask?.cancel()
+        reconnectTask = nil
+        connection?.cancel()
+        connection = nil
+        connect()
     }
 
     private func connect() {
@@ -92,18 +111,29 @@ final class SocketClient: ObservableObject, @unchecked Sendable {
                     log("PokeScan: CONNECTED to mGBA")
                     self.connectionState = .connected
                     self.buffer = Data()
+                    // Cancel any pending reconnect task - we're connected now
+                    self.reconnectTask?.cancel()
+                    self.reconnectTask = nil
                     self.receiveData()
                 case .failed(let error):
                     log("PokeScan: Connection FAILED - \(error)")
                     self.connectionState = .disconnected
-                    self.scheduleReconnect()
+                    if self.shouldReconnect {
+                        self.scheduleReconnect()
+                    }
                 case .cancelled:
-                    log("PokeScan: Connection cancelled")
-                    self.connectionState = .disconnected
-                    self.scheduleReconnect()
+                    // Only log and reconnect if not intentionally stopped
+                    if self.shouldReconnect {
+                        log("PokeScan: Connection cancelled, will reconnect")
+                        self.connectionState = .disconnected
+                        self.scheduleReconnect()
+                    }
                 case .waiting(let error):
                     log("PokeScan: Waiting - \(error)")
-                    self.connectionState = .connecting
+                    self.connectionState = .disconnected
+                    if self.shouldReconnect {
+                        self.scheduleReconnect()
+                    }
                 default:
                     break
                 }
@@ -132,12 +162,28 @@ final class SocketClient: ObservableObject, @unchecked Sendable {
             DispatchQueue.main.async {
                 if let data = data, !data.isEmpty {
                     self.buffer.append(data)
-                    self.processBuffer()
+
+                    // Prevent buffer overflow in fast-forward mode
+                    if self.buffer.count > self.maxBufferSize {
+                        log("PokeScan: Buffer overflow, clearing")
+                        self.buffer = Data()
+                    } else {
+                        self.processBuffer()
+                    }
                 }
 
-                if isComplete || error != nil {
+                if let error = error {
+                    log("PokeScan: Receive error - \(error)")
                     self.connectionState = .disconnected
-                    self.scheduleReconnect()
+                    if self.shouldReconnect {
+                        self.scheduleReconnect()
+                    }
+                } else if isComplete {
+                    log("PokeScan: Server closed connection")
+                    self.connectionState = .disconnected
+                    if self.shouldReconnect {
+                        self.scheduleReconnect()
+                    }
                 } else {
                     self.receiveData()
                 }
@@ -159,12 +205,20 @@ final class SocketClient: ObservableObject, @unchecked Sendable {
         do {
             let raw = try JSONDecoder().decode(RawPokemonPayload.self, from: data)
 
-            // Handle clear message
+            // Handle clear message - always process immediately
             if raw.clear == true {
                 log("PokeScan: RECV clear")
+                lastMessageTime = Date()
                 currentPokemon = nil
                 return
             }
+
+            // Time-based throttling - skip if too soon after last message
+            let now = Date()
+            if now.timeIntervalSince(lastMessageTime) < minMessageInterval {
+                return  // Skip this message, too soon
+            }
+            lastMessageTime = now
 
             log("PokeScan: RECV species_id=\(raw.species_id ?? -1) exp=\(raw.exp ?? -1)")
             if let normalized = registry.normalize(raw, dex: dex) {

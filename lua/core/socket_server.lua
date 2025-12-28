@@ -117,20 +117,20 @@ function SocketServer:start()
 end
 
 function SocketServer:acceptConnection()
-  if self.client then
-    -- Already have a client, ignore new connections
-    return
-  end
-
   local client, err = self.server:accept()
   if client then
+    -- Close old client if exists (it's probably dead anyway)
+    if self.client then
+      log("PokeScan: Replacing old client connection")
+    end
+
     self.client = client
     self.justConnected = true  -- Signal to resend current data
     log("PokeScan: Overlay connected!")
 
-    -- Register error handler on client to detect disconnection
+    -- Register error handler on client - clear client on error
     self.client:add("error", function()
-      log("PokeScan: Client disconnected")
+      log("PokeScan: Client disconnected (error callback)")
       self.client = nil
     end)
   end
@@ -154,35 +154,44 @@ function SocketServer:tick()
     return
   end
 
-  -- No need to manually poll - callbacks handle it
-  -- But we can poll to ensure events are processed
+  -- Poll server for new connections
   if self.server then
     self.server:poll()
   end
+
+  -- Poll client for events (but mGBA handles most of this automatically)
   if self.client then
     self.client:poll()
   end
 end
 
 function SocketServer:sendTable(tbl)
-  if self.failed or not self.started or not self.client then
+  if self.failed or not self.started then
+    return false
+  end
+
+  if not self.client then
     return false
   end
 
   local payload = self.json.encode(tbl) .. "\n"
-  local result = self.client:send(payload)
+  local ok, result, err = pcall(function()
+    return self.client:send(payload)
+  end)
 
-  if not result or result < 0 then
-    log("PokeScan: Send failed, client disconnected")
+  if not ok then
+    log("PokeScan: Send exception - " .. tostring(result))
     self.client = nil
     return false
   end
 
-  -- Log what we're sending
-  log(string.format("PokeScan: SENT species_id=%s pid=%s shiny=%s",
-    tostring(tbl.species_id),
-    tostring(tbl.pid),
-    tostring(tbl.shiny)))
+  -- send() returns last index written on success, or nil + error on failure
+  if result == nil then
+    log("PokeScan: Send failed - " .. tostring(err))
+    self.client = nil
+    return false
+  end
+
   return true
 end
 

@@ -8,18 +8,29 @@ struct ContentView: View {
     @EnvironmentObject private var dex: PokemonDex
     @EnvironmentObject private var windowController: OverlayWindowController
 
+    @ObservedObject private var launcher = LaunchManager.shared
+    @ObservedObject private var settings = AppSettings.shared
+
     @State private var verdict: CatchVerdict?
     @State private var isHovering = false
+    @State private var showingSettings = false
 
     private var hasPokemon: Bool {
         socket.connectionState == .connected && socket.currentPokemon != nil
     }
 
     private var windowOpacity: Double {
-        // Always visible when Pokemon is present
+        // Hovering always shows full opacity
+        if isHovering { return 1.0 }
+
+        // In battle - fully visible
         if hasPokemon { return 1.0 }
-        // When no Pokemon, show dimmed unless hovering
-        return isHovering ? 1.0 : 0.3
+
+        // Connected but no battle - hide completely (can hover to show)
+        if socket.connectionState == .connected { return settings.connectedIdleOpacity }
+
+        // Disconnected - show dimmed so user knows status
+        return settings.disconnectedOpacity
     }
 
     private var isShiny: Bool {
@@ -381,6 +392,25 @@ struct ContentView: View {
 
     private var contextMenu: some View {
         Group {
+            // Launch section
+            Button(action: {
+                Task {
+                    await launcher.quickLaunch(socketClient: socket)
+                }
+            }) {
+                if launcher.isLaunching {
+                    Text("Launching...")
+                } else if launcher.mgbaRunning {
+                    Label("Relaunch mGBA", systemImage: "arrow.clockwise")
+                } else {
+                    Label("Launch mGBA", systemImage: "play.fill")
+                }
+            }
+            .disabled(!settings.isConfigured || launcher.isLaunching)
+
+            Divider()
+
+            // Profile section
             Menu("Profile: \(criteria.criteria.activeProfile)") {
                 ForEach(criteria.profileKeys(), id: \.self) { key in
                     Button(key) { criteria.setActiveProfile(key) }
@@ -394,10 +424,20 @@ struct ContentView: View {
                 get: { windowController.alwaysOnTop },
                 set: { windowController.setAlwaysOnTop($0) }
             ))
+
             Divider()
+
             Button("Reload Criteria") { criteria.reload() }
             Button("Edit Criteria") { NSWorkspace.shared.open(criteria.fileURL) }
+
             Divider()
+
+            Button("Settings...") {
+                NotificationCenter.default.post(name: .showSettings, object: nil)
+            }
+
+            Divider()
+
             Button("Quit") { NSApp.terminate(nil) }
         }
     }

@@ -33,36 +33,18 @@ PokeScan consists of two parts:
 
 ## Installation
 
-### One-Click Launcher (Recommended)
-
-```bash
-git clone https://github.com/Veridiann/PokeScan.git
-cd PokeScan
-./launcher/install.sh
-```
-
-Then edit `~/.config/pokescan/pokescan.conf` to set your ROM path:
-
-```bash
-ROM_PATH="$HOME/Games/Pokemon/Emerald.gba"
-SAVE_SLOT="latest"  # or 0-9 for specific slot, "none" to skip
-```
-
-Double-click **PokeScan Launcher** in Applications to start everything automatically.
-
-### Manual Setup
-
-#### Build from Source
+### Build and Install
 
 ```bash
 git clone https://github.com/Veridiann/PokeScan.git
 cd PokeScan
 swift build -c release
+./launcher/install-app.sh
 ```
 
-The built executable will be at `.build/release/PokeScan`.
+This builds PokeScan and installs it to `/Applications/PokeScan.app`.
 
-#### Using Xcode
+### Using Xcode
 
 1. Open `Package.swift` in Xcode
 2. Select the PokeScan scheme
@@ -70,12 +52,41 @@ The built executable will be at `.build/release/PokeScan`.
 
 ## Usage
 
-### With Launcher
+### Quick Start (Recommended)
 
-Just double-click **PokeScan Launcher** in Applications. It will:
-- Launch mGBA with your ROM and the Lua script
-- Load your save state (if configured)
-- Start the PokeScan overlay
+1. **Launch PokeScan** from Applications
+2. **Settings opens automatically** on first run
+3. **Configure paths:**
+   - mGBA.app (auto-detected if in /Applications)
+   - Pokemon Emerald ROM (use Browse button)
+   - Save state slot (latest/specific/none)
+4. **Click "Launch mGBA"** button
+5. **Enter a wild battle** - overlay shows Pokemon data
+
+### Context Menu
+
+Right-click the overlay to:
+- **Launch/Relaunch mGBA** - Start mGBA with your configured settings
+- **Switch profiles** - Change catch criteria
+- **Toggle sound alerts**
+- **Open Settings** - Configure paths and preferences
+- **Edit Criteria** - Customize catch rules
+
+### Keyboard Shortcuts
+
+- **Cmd+,** - Open Settings
+- **1-9** - Quick switch catch profiles
+- **Space** - Clear alert flash
+
+### Standalone Launcher (Alternative)
+
+If you prefer a separate launcher app:
+
+```bash
+./launcher/install.sh
+```
+
+Then edit `~/.config/pokescan/pokescan.conf` and double-click **PokeScan Launcher** in Applications.
 
 ### Manual Usage
 

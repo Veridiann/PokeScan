@@ -23,6 +23,8 @@ local server = SocketServer.new({
 
 local lastPID = 0
 local lastHadPokemon = false
+local lastSendFrame = 0
+local MIN_SEND_INTERVAL = 10  -- Minimum frames between sends (prevents fast-forward flooding)
 local DEBUG = false
 
 -- Test mode: force shiny and/or perfect IVs for UI testing
@@ -37,7 +39,10 @@ local function log(msg)
   end
 end
 
+local frameCount = 0
+
 local function onFrame()
+  frameCount = frameCount + 1
   server:tick()
 
   if not readWildPokemon then
@@ -48,7 +53,11 @@ local function onFrame()
   if not data then
     -- Send clear message if we previously had a Pokemon
     if lastHadPokemon then
-      server:sendTable({ clear = true })
+      -- Throttle clear messages too
+      if frameCount - lastSendFrame >= MIN_SEND_INTERVAL then
+        server:sendTable({ clear = true })
+        lastSendFrame = frameCount
+      end
       lastHadPokemon = false
       lastPID = 0
     end
@@ -67,7 +76,13 @@ local function onFrame()
   -- Check if client just connected - if so, always send current data
   local forceResend = server:didJustConnect()
 
+  -- Skip if same Pokemon and not forcing resend
   if not forceResend and data.pid and data.pid == lastPID then
+    return
+  end
+
+  -- Throttle sends to prevent fast-forward flooding
+  if not forceResend and (frameCount - lastSendFrame) < MIN_SEND_INTERVAL then
     return
   end
 
@@ -82,6 +97,7 @@ local function onFrame()
   end
 
   lastPID = data.pid or lastPID
+  lastSendFrame = frameCount
   server:sendTable(data)
 end
 
