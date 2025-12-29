@@ -29,6 +29,9 @@ PokeScan/
 ├── Package.swift             # Swift package manifest (macOS 13.0+)
 ├── LICENSE                   # MIT License
 │
+├── .codex/                   # Codex skill config + references
+├── .claude/                  # Legacy assistant config
+│
 ├── launcher/                 # One-click launcher system
 │   ├── install.sh            # Installs PokeScan Launcher.app
 │   ├── install-app.sh        # Installs PokeScan.app (overlay only)
@@ -76,16 +79,10 @@ PokeScan/
 │   │   └── port              # Port file for client discovery
 │   └── SAVE_STATES.md        # Save state documentation
 │
-├── references/               # Reference materials
-│   └── PokeLua/              # External Lua scripts for reference
-│
-├── .claude/skills/           # AI assistant configuration
-│   └── mgba-lua/             # mGBA Lua API references
-│       └── references/       # API documentation files
-│
 ├── dev.sh                    # Dev launcher (builds + runs)
 └── test.sh                   # Automated test script
 ```
+
 
 ## Component Details
 
@@ -107,11 +104,13 @@ Main orchestrator that:
 ```lua
 local lastPID = 0              -- Last Pokemon PID (detect changes)
 local lastHadPokemon = false   -- Track battle state transitions
-local lastSendFrame = 0        -- Frame-based throttling
-local MIN_SEND_INTERVAL = 10   -- Min frames between sends
+local lastSendAt = 0           -- Last send time (seconds)
+local MIN_SEND_INTERVAL = 0.25 -- Min seconds between sends
+local pending = nil            -- Coalesced payload
 local TEST_SHINY = false       -- Force shiny for UI testing
 local TEST_PERFECT_IVS = false -- Force perfect IVs for testing
 ```
+
 
 **State Machine:**
 - `lastHadPokemon = false` → `true`: Entering battle (bypasses throttle)
@@ -149,7 +148,10 @@ Memory addresses and decryption for Pokemon Emerald US/EU:
 ```lua
 local enemyAddr = 0x2024744    -- Wild Pokemon data (100 bytes)
 local wildTypeAddr = 0x20240FD -- Battle type: 0=none, 1=wild, 2+=trainer
+local gMainAddr = 0x30022C0    -- Main struct (US/EU)
+local gMainInBattleAddr = gMainAddr + 0x439 -- inBattle bit (0x2)
 ```
+
 
 **Lookup Tables:**
 - 25 nature names (Hardy through Quirky)
@@ -165,12 +167,13 @@ getHPTypeAndPower(ivs)   -- Calculate Hidden Power type/power
 shinyCheck(pid, otid)    -- Determine shiny status (square vs star)
 getGender(pid, species)  -- Determine gender from PID and ratio
 readWildPokemon()        -- Main function: returns Pokemon table or nil
+inBattle()               -- Uses gMain.inBattle when available
 ```
 
 **Data Structure (returned):**
 ```lua
 {
-  type = "pokemon",
+  type = "wild",
   game = "emerald_us_eu",
   pid = 0x12345678,
   species_id = 280,          -- National Dex number
@@ -393,7 +396,7 @@ Currently registered: `emerald_us_eu`
 Sent from Lua to Swift:
 ```json
 {
-  "type": "pokemon",
+  "type": "wild",
   "game": "emerald_us_eu",
   "pid": 2847593821,
   "species_id": 280,
@@ -468,9 +471,9 @@ Sent when leaving battle:
      │                                        │
      │◄─────── TCP Connect ──────────────────┤
      │                                        │
-     │──── {"type":"pokemon",...} ──────────►│  (on battle start)
+     │──── {"type":"wild",...} ──────────►│  (on battle start)
      │                                        │
-     │──── {"type":"pokemon",...} ──────────►│  (on Pokemon change)
+     │──── {"type":"wild",...} ──────────►│  (on Pokemon change)
      │                                        │
      │──── {"clear":true} ──────────────────►│  (on battle end)
      │                                        │
@@ -493,10 +496,10 @@ Sent when leaving battle:
 
 ### Throttling (Dual-Layer)
 
-**Layer 1: Lua (Frame-Based)**
+**Layer 1: Lua (Time-Based + Coalescing)**
 ```lua
-local MIN_SEND_INTERVAL = 10  -- Minimum frames between sends
-if not bypassThrottle and (frameCount - lastSendFrame) < MIN_SEND_INTERVAL then
+local MIN_SEND_INTERVAL = 0.25  -- Minimum seconds between sends
+if not pending.clear and (now - lastSendAt) < MIN_SEND_INTERVAL then
     return
 end
 ```
@@ -514,7 +517,7 @@ if now.timeIntervalSince(lastMessageTime) < minMessageInterval {
 Throttling is bypassed for:
 1. **Battle entry** - Transition from no Pokemon to has Pokemon
 2. **Client just connected** - Ensure client has current state
-3. **Clear messages** - Always send battle end (but still throttled)
+3. **Clear messages** - Always send battle end immediately
 
 ### Buffer Protection
 
@@ -543,6 +546,14 @@ end
 |---------|-------------|
 | 0x02024744 | Wild/Enemy Pokemon (100 bytes) |
 | 0x020240FD | Battle type flag |
+| 0x030022C0 | gMain (US/EU) |
+| 0x03002360 | gMain (JPN) |
+
+
+
+**Battle State Signal (Emerald):**
+- Prefer `gMain.inBattle` (bit 0x2 at `gMain + 0x439`). This is robust during fast-forward and avoids overworld false positives.
+- Use `wildTypeAddr` and ad-hoc flags only as fallback signals.
 
 **Battle Type Values:**
 | Value | Meaning |
@@ -668,6 +679,17 @@ tail -f /tmp/pokescan.log
 # Lua server log
 tail -f dev/logs/lua.log
 ```
+
+### Debugging & Lessons Learned
+
+- **Battle detection**: `wildTypeAddr` can be stale and false-positive on overworld tiles. Use `gMain.inBattle` when available.
+- **Fast-forward stability**: real-time throttling plus coalescing prevents backlog and keeps UI state consistent at high emu speeds.
+- **Lua debug mode**: create `dev/logs/debug` to enable richer battle state logging to `dev/logs/lua_sender.log`.
+- **State scanning**: create `dev/logs/scan` to compare `dev/emerald.ss1` (out of battle) vs `dev/emerald.ss2` (in battle) for candidate flags.
+- **Reference materials**: large reference bundles live outside the repo in the workspace:
+  - `../Reference Projects/PokeLua`
+  - `../gba_refs_md`
+
 
 ### Building for Release
 

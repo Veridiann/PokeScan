@@ -58,9 +58,18 @@ cat > "$APP_PATH/Contents/Info.plist" << 'PLIST'
 </plist>
 PLIST
 
-# Copy binary and resources
+# Copy binary
 cp "$POKESCAN_DIR/.build/release/PokeScan" "$APP_PATH/Contents/MacOS/"
-cp -R "$POKESCAN_DIR/.build/release/PokeScan_PokeScan.bundle" "$APP_PATH/Contents/Resources/"
+
+# SwiftPM resource bundles are resolved relative to the app root (Bundle.main.bundleURL),
+# so place PokeScan_PokeScan.bundle next to Contents/.
+RESOURCE_BUNDLE="$POKESCAN_DIR/.build/release/PokeScan_PokeScan.bundle"
+if [[ -d "$RESOURCE_BUNDLE" ]]; then
+    rm -rf "$APP_PATH/PokeScan_PokeScan.bundle"
+    cp -R "$RESOURCE_BUNDLE" "$APP_PATH/PokeScan_PokeScan.bundle"
+else
+    echo "Warning: resource bundle not found at $RESOURCE_BUNDLE"
+fi
 
 echo ""
 echo "Installed: $APP_PATH"
